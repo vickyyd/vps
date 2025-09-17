@@ -53,7 +53,7 @@ install_base() {
         zypper refresh && zypper -q install -y wget curl tar timezone
         ;;
     *)
-        apt-get update && apt-get install -y -q wget curl tar tzdata
+        apk update && apk add -y -q wget curl tar tzdata
         ;;
     esac
 }
@@ -119,7 +119,7 @@ config_after_install() {
 prepare_services() {
     if [[ -f "/etc/systemd/system/sing-box.service" ]]; then
         echo -e "${yellow}Stopping sing-box service... ${plain}"
-        systemctl stop sing-box
+        rc-service stop sing-box
         rm -f /usr/local/s-ui/bin/sing-box /usr/local/s-ui/bin/runSingbox.sh /usr/local/s-ui/bin/signal
     fi
     if [[ -e "/usr/local/s-ui/bin" ]]; then
@@ -128,7 +128,7 @@ prepare_services() {
         echo -e "Please check the content and delete it manually after migration ${plain}"
         echo -e "###############################################################"
     fi
-    systemctl daemon-reload
+    rc-service daemon-reload
 }
 
 install_s-ui() {
@@ -158,7 +158,7 @@ install_s-ui() {
     fi
 
     if [[ -e /usr/local/s-ui/ ]]; then
-        systemctl stop s-ui
+        rc-service stop s-ui
     fi
 
     tar zxvf s-ui-linux-$(arch).tar.gz
@@ -173,7 +173,7 @@ install_s-ui() {
     config_after_install
     prepare_services
 
-    systemctl enable s-ui --now
+    rc-service enable s-ui --now
 
     echo -e "${green}s-ui v${last_version}${plain} installation finished, it is up and running now..."
     echo -e "You may access the Panel with following URL(s):${green}"
