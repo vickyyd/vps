@@ -119,7 +119,7 @@ config_after_install() {
 prepare_services() {
     if [[ -f "/etc/systemd/system/sing-box.service" ]]; then
         echo -e "${yellow}Stopping sing-box service... ${plain}"
-        rc-service stop sing-box
+        rc-service sing-box stop
         rm -f /usr/local/s-ui/bin/sing-box /usr/local/s-ui/bin/runSingbox.sh /usr/local/s-ui/bin/signal
     fi
     if [[ -e "/usr/local/s-ui/bin" ]]; then
@@ -158,7 +158,7 @@ install_s-ui() {
     fi
 
     if [[ -e /usr/local/s-ui/ ]]; then
-        rc-service stop s-ui
+        rc-service s-ui stop
     fi
 
     tar zxvf s-ui-linux-$(arch).tar.gz
@@ -173,8 +173,9 @@ install_s-ui() {
     config_after_install
     prepare_services
 
-    rc-service enable s-ui --now
-
+    rc-update add s-ui default
+    rc-service s-ui start
+    
     echo -e "${green}s-ui v${last_version}${plain} installation finished, it is up and running now..."
     echo -e "You may access the Panel with following URL(s):${green}"
     /usr/local/s-ui/sui uri
