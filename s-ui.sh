@@ -40,7 +40,7 @@ echo "arch: $(arch)"
 
 install_base() {
     case "${release}" in
-    alpine)
+    *alpine*)
         apk update && apk add --no-cache wget curl tar tzdata
         ;;
     centos | almalinux | rocky | oracle)
@@ -120,7 +120,7 @@ config_after_install() {
 }
 
 prepare_services() {
-    if [[ "$release" == "alpine" ]]; then
+    if [[ "${release}" == *"alpine"* ]]; then
         if [[ -f "/etc/init.d/sing-box" ]]; then
             echo -e "${yellow}Stopping sing-box service... ${plain}"
             rc-service sing-box stop
@@ -170,7 +170,7 @@ install_s-ui() {
     fi
 
     if [[ -e /usr/local/s-ui/ ]]; then
-        if [[ "$release" == "alpine" ]]; then
+        if [[ "${release}" == *"alpine"* ]]; then
             if [[ -f "/etc/init.d/s-ui" ]]; then
                 rc-service s-ui stop
             fi
@@ -185,7 +185,7 @@ install_s-ui() {
     chmod +x s-ui/sui s-ui/s-ui.sh
     cp s-ui/s-ui.sh /usr/bin/s-ui
     cp -rf s-ui /usr/local/
-    if [[ "$release" == "alpine" ]]; then
+    if [[ "${release}" == *"alpine"* ]]; then
         # Create openrc script
         cat > /etc/init.d/s-ui <<'EOF'
 #!/sbin/openrc-run
@@ -218,7 +218,7 @@ EOF
     config_after_install
     prepare_services
 
-    if [[ "$release" == "alpine" ]]; then
+    if [[ "${release}" == *"alpine"* ]]; then
         rc-update add s-ui default
         rc-service s-ui start
     else
