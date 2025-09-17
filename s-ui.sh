@@ -40,6 +40,9 @@ echo "arch: $(arch)"
 
 install_base() {
     case "${release}" in
+    alpine)
+        apk update && apk add --no-cache wget curl tar tzdata
+        ;;
     centos | almalinux | rocky | oracle)
         yum -y update && yum install -y -q wget curl tar tzdata
         ;;
@@ -53,7 +56,7 @@ install_base() {
         zypper refresh && zypper -q install -y wget curl tar timezone
         ;;
     *)
-        apk update && apk add -y -q wget curl tar tzdata
+        apt-get update && apt-get install -y -q wget curl tar tzdata
         ;;
     esac
 }
@@ -117,18 +120,27 @@ config_after_install() {
 }
 
 prepare_services() {
-    if [[ -f "/etc/systemd/system/sing-box.service" ]]; then
-        echo -e "${yellow}Stopping sing-box service... ${plain}"
-        rc-service sing-box stop
-        rm -f /usr/local/s-ui/bin/sing-box /usr/local/s-ui/bin/runSingbox.sh /usr/local/s-ui/bin/signal
+    if [[ "$release" == "alpine" ]]; then
+        if [[ -f "/etc/init.d/sing-box" ]]; then
+            echo -e "${yellow}Stopping sing-box service... ${plain}"
+            rc-service sing-box stop
+            rm -f /usr/local/s-ui/bin/sing-box /usr/local/s-ui/bin/runSingbox.sh /usr/local/s-ui/bin/signal
+        fi
+    else
+        if [[ -f "/etc/systemd/system/sing-box.service" ]]; then
+            echo -e "${yellow}Stopping sing-box service... ${plain}"
+            systemctl stop sing-box
+            rm -f /usr/local/s-ui/bin/sing-box /usr/local/s-ui/bin/runSingbox.sh /usr/local/s-ui/bin/signal
+        fi
+        systemctl daemon-reload
     fi
+
     if [[ -e "/usr/local/s-ui/bin" ]]; then
         echo -e "###############################################################"
         echo -e "${green}/usr/local/s-ui/bin${red} directory exists yet!"
         echo -e "Please check the content and delete it manually after migration ${plain}"
         echo -e "###############################################################"
     fi
-    rc-service daemon-reload
 }
 
 install_s-ui() {
@@ -158,7 +170,13 @@ install_s-ui() {
     fi
 
     if [[ -e /usr/local/s-ui/ ]]; then
-        rc-service s-ui stop
+        if [[ "$release" == "alpine" ]]; then
+            if [[ -f "/etc/init.d/s-ui" ]]; then
+                rc-service s-ui stop
+            fi
+        else
+            systemctl stop s-ui
+        fi
     fi
 
     tar zxvf s-ui-linux-$(arch).tar.gz
@@ -167,15 +185,46 @@ install_s-ui() {
     chmod +x s-ui/sui s-ui/s-ui.sh
     cp s-ui/s-ui.sh /usr/bin/s-ui
     cp -rf s-ui /usr/local/
-    cp -f s-ui/*.service /etc/systemd/system/
+    if [[ "$release" == "alpine" ]]; then
+        # Create openrc script
+        cat > /etc/init.d/s-ui <<'EOF'
+#!/sbin/openrc-run
+
+command="/usr/local/s-ui/sui"
+pidfile="/run/s-ui.pid"
+
+depend() {
+    need net
+}
+
+start() {
+    ebegin "Starting s-ui"
+    start-stop-daemon --start --pidfile "$pidfile" --make-pidfile --background --exec "$command"
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping s-ui"
+    start-stop-daemon --stop --pidfile "$pidfile"
+    eend $?
+}
+EOF
+        chmod +x /etc/init.d/s-ui
+    else
+        cp -f s-ui/*.service /etc/systemd/system/
+    fi
     rm -rf s-ui
 
     config_after_install
     prepare_services
 
-    rc-update add s-ui default
-    rc-service s-ui start
-    
+    if [[ "$release" == "alpine" ]]; then
+        rc-update add s-ui default
+        rc-service s-ui start
+    else
+        systemctl enable s-ui --now
+    fi
+
     echo -e "${green}s-ui v${last_version}${plain} installation finished, it is up and running now..."
     echo -e "You may access the Panel with following URL(s):${green}"
     /usr/local/s-ui/sui uri
