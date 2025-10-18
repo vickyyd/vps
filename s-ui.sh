@@ -147,6 +147,13 @@ install_glibc() {
     rm glibc-${GLIBC_VER}.apk
 
     echo "glibc ${GLIBC_VER} 安装完成"
+
+    if [ ! -f /usr/glibc/bin/glibc-ld.so ]; then
+        echo -e "${red}错误：glibc loader 未在 /usr/glibc/bin/glibc-ld.so 找到！${plain}"
+        echo -e "${red}s-ui 服务可能无法启动。${plain}"
+    else
+        echo -e "${green}glibc loader 在 /usr/glibc/bin/glibc-ld.so 找到。${plain}"
+    fi
 }
 
 install_s-ui() {
