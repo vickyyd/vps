@@ -5,60 +5,40 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
-cur_dir=$(pwd)
-
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}Fatal error: ${plain} Please run this script with root privilege \n " && exit 1
 
-# Check OS and set release variable
+# Check OS
 if [[ -f /etc/os-release ]]; then
     source /etc/os-release
-    release=$ID
-elif [[ -f /usr/lib/os-release ]]; then
-    source /usr/lib/os-release
-    release=$ID
+    if [[ "$ID" != "alpine" ]]; then
+        echo -e "${red}This script is only for Alpine Linux!${plain}"
+        exit 1
+    fi
 else
-    echo "Failed to check the system OS, please contact the author!" >&2
+    echo "Failed to check the system OS." >&2
     exit 1
 fi
-echo "The OS release is: $release"
 
 arch() {
     case "$(uname -m)" in
-    x86_64 | x64 | amd64) echo 'amd64' ;;
-    i*86 | x86) echo '386' ;;
-    armv8* | armv8 | arm64 | aarch64) echo 'arm64' ;;
-    armv7* | armv7 | arm) echo 'armv7' ;;
-    armv6* | armv6) echo 'armv6' ;;
-    armv5* | armv5) echo 'armv5' ;;
-    s390x) echo 's390x' ;;
-    *) echo -e "${green}Unsupported CPU architecture! ${plain}" && rm -f install.sh && exit 1 ;;
+    x86_64 | x64 | amd64) echo 'amd64' ;; 
+    i*86 | x86) echo '386' ;; 
+    armv8* | armv8 | arm64 | aarch64) echo 'arm64' ;; 
+    armv7* | armv7 | arm) echo 'armv7' ;; 
+    armv6* | armv6) echo 'armv6' ;; 
+    armv5* | armv5) echo 'armv5' ;; 
+    s390x) echo 's390x' ;; 
+    *) echo -e "${green}Unsupported CPU architecture! ${plain}" && exit 1 ;; 
     esac
 }
 
+echo "OS: Alpine"
 echo "arch: $(arch)"
 
 install_base() {
-    case "${release}" in
-    *alpine*)
-        apk update && apk add --no-cache wget curl tar tzdata
-        ;;
-    centos | almalinux | rocky | oracle)
-        yum -y update && yum install -y -q wget curl tar tzdata
-        ;;
-    fedora)
-        dnf -y update && dnf install -y -q wget curl tar tzdata
-        ;;
-    arch | manjaro | parch)
-        pacman -Syu && pacman -Syu --noconfirm wget curl tar tzdata
-        ;;
-    opensuse-tumbleweed)
-        zypper refresh && zypper -q install -y wget curl tar timezone
-        ;;
-    *)
-        apt-get update && apt-get install -y -q wget curl tar tzdata
-        ;;
-    esac
+    echo -e "${green}Installing base dependencies (wget, curl, tar, tzdata)...${plain}"
+    apk add --no-cache --update wget curl tar tzdata bash
 }
 
 config_after_install() {
@@ -66,7 +46,7 @@ config_after_install() {
     /usr/local/s-ui/sui migrate
     
     echo -e "${yellow}Install/update finished! For security it's recommended to modify panel settings ${plain}"
-    read -p "Do you want to continue with the modification [y/n]? ": config_confirm
+    read -p "Do you want to continue with the modification [y/n]? " config_confirm
     if [[ "${config_confirm}" == "y" || "${config_confirm}" == "Y" ]]; then
         echo -e "Enter the ${yellow}panel port${plain} (leave blank for existing/default value):"
         read config_port
@@ -88,7 +68,7 @@ config_after_install() {
         [ -z "$config_subPath" ] || params="$params -subPath $config_subPath"
         /usr/local/s-ui/sui setting ${params}
 
-        read -p "Do you want to change admin credentials [y/n]? ": admin_confirm
+        read -p "Do you want to change admin credentials [y/n]? " admin_confirm
         if [[ "${admin_confirm}" == "y" || "${admin_confirm}" == "Y" ]]; then
             # First admin credentials
             read -p "Please set up your username:" config_account
@@ -119,28 +99,55 @@ config_after_install() {
     fi
 }
 
-prepare_services() {
-    if [[ "${release}" == *"alpine"* ]]; then
-        if [[ -f "/etc/init.d/sing-box" ]]; then
-            echo -e "${yellow}Stopping sing-box service... ${plain}"
-            rc-service sing-box stop
-            rm -f /usr/local/s-ui/bin/sing-box /usr/local/s-ui/bin/runSingbox.sh /usr/local/s-ui/bin/signal
-        fi
-    else
-        if [[ -f "/etc/systemd/system/sing-box.service" ]]; then
-            echo -e "${yellow}Stopping sing-box service... ${plain}"
-            systemctl stop sing-box
-            rm -f /usr/local/s-ui/bin/sing-box /usr/local/s-ui/bin/runSingbox.sh /usr/local/s-ui/bin/signal
-        fi
-        systemctl daemon-reload
-    fi
+create_init_script() {
+    cat > /etc/init.d/s-ui <<-"EOF"
+#!/sbin/openrc-run
 
-    if [[ -e "/usr/local/s-ui/bin" ]]; then
-        echo -e "###############################################################"
-        echo -e "${green}/usr/local/s-ui/bin${red} directory exists yet!"
-        echo -e "Please check the content and delete it manually after migration ${plain}"
-        echo -e "###############################################################"
-    fi
+command="/usr/local/s-ui/sui"
+command_args=""
+command_user="root"
+
+pidfile="/var/run/s-ui.pid"
+
+name="s-ui"
+description="s-ui panel"
+
+depend() {
+    need net
+}
+
+start() {
+    checkpath -d -m 755 /var/run
+    start-stop-daemon --start --quiet --pidfile "\$pidfile" --exec "\$command" \
+        --background --make-pidfile -- \$command_args
+}
+
+stop() {
+    start-stop-daemon --stop --quiet --pidfile "\$pidfile"
+}
+EOF
+    chmod +x /etc/init.d/s-ui
+}
+
+install_glibc() {
+    echo "正在准备 glibc 安装修复环境..."
+
+    # 1. 删除 /etc/nsswitch.conf（防止冲突）
+    rm -f /etc/nsswitch.conf
+
+    # 2. 下载 sgerrand 的公钥
+    curl -Lo /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
+
+    # 3. 下载指定版本的 glibc 包
+    GLIBC_VER="2.34-r0"
+    curl -Lo glibc-${GLIBC_VER}.apk https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${GLIBC_VER}/glibc-${GLIBC_VER}.apk
+
+    # 4. 安装 glibc，允许覆盖
+    apk add --allow-untrusted --force-overwrite glibc-${GLIBC_VER}.apk
+
+    rm glibc-${GLIBC_VER}.apk
+
+    echo "glibc ${GLIBC_VER} 安装完成"
 }
 
 install_s-ui() {
@@ -169,14 +176,9 @@ install_s-ui() {
         fi
     fi
 
-    if [[ -e /usr/local/s-ui/ ]]; then
-        if [[ "${release}" == *"alpine"* ]]; then
-            if [[ -f "/etc/init.d/s-ui" ]]; then
-                rc-service s-ui stop
-            fi
-        else
-            systemctl stop s-ui
-        fi
+    if [ -f /etc/init.d/s-ui ]; then
+        rc-service s-ui stop
+        rc-update del s-ui default
     fi
 
     tar zxvf s-ui-linux-$(arch).tar.gz
@@ -185,45 +187,14 @@ install_s-ui() {
     chmod +x s-ui/sui s-ui/s-ui.sh
     cp s-ui/s-ui.sh /usr/bin/s-ui
     cp -rf s-ui /usr/local/
-    if [[ "${release}" == *"alpine"* ]]; then
-        # Create openrc script
-        cat > /etc/init.d/s-ui <<'EOF'
-#!/sbin/openrc-run
-
-command="/usr/local/s-ui/sui"
-pidfile="/run/s-ui.pid"
-
-depend() {
-    need net
-}
-
-start() {
-    ebegin "Starting s-ui"
-    start-stop-daemon --start --pidfile "$pidfile" --make-pidfile --background --exec "$command"
-    eend $?
-}
-
-stop() {
-    ebegin "Stopping s-ui"
-    start-stop-daemon --stop --pidfile "$pidfile"
-    eend $?
-}
-EOF
-        chmod +x /etc/init.d/s-ui
-    else
-        cp -f s-ui/*.service /etc/systemd/system/
-    fi
     rm -rf s-ui
+    
+    create_init_script
 
     config_after_install
-    prepare_services
 
-    if [[ "${release}" == *"alpine"* ]]; then
-        rc-update add s-ui default
-        rc-service s-ui start
-    else
-        systemctl enable s-ui --now
-    fi
+    rc-update add s-ui default
+    rc-service s-ui start
 
     echo -e "${green}s-ui v${last_version}${plain} installation finished, it is up and running now..."
     echo -e "You may access the Panel with following URL(s):${green}"
@@ -235,4 +206,5 @@ EOF
 
 echo -e "${green}Executing...${plain}"
 install_base
+install_glibc
 install_s-ui $1
