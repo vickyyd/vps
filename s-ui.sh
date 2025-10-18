@@ -103,8 +103,8 @@ create_init_script() {
     cat > /etc/init.d/s-ui <<-"EOF"
 #!/sbin/openrc-run
 
-command="/usr/local/s-ui/sui"
-command_args=""
+command="/usr/glibc/bin/glibc-ld.so"
+command_args="/usr/local/s-ui/sui"
 command_user="root"
 
 pidfile="/var/run/s-ui.pid"
@@ -117,7 +117,6 @@ depend() {
 }
 
 start() {
-    checkpath -d -m 755 /var/run
     start-stop-daemon --start --quiet --pidfile "\$pidfile" --exec "\$command" \
         --background --make-pidfile -- \$command_args
 }
